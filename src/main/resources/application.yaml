@@ -14,10 +14,18 @@ spring:
       use-new-id-generator-mappings: true
     database-platform: org.hibernate.dialect.H2Dialect
     open-in-view: false
+  cache:
+    type: redis
+  redis:
+    host: 192.168.2.101
+    port: 6379
+    password: 123456
+    timeout: 3000
 
 server:
   error:
     include-message: always
+  port: 9091
 
 cn:
   spark2fire:
@@ -26,6 +34,7 @@ cn:
         secret-key: "27b8c0a5-ed89-45cb-b5fd-cae6af9be6d7"
 
 app:
+  configUrl:
   sort: true
   formats:
     - dff
@@ -69,6 +78,14 @@ app:
     - 3gp
     - asf
   sites:
-    - name: 本地
-      url: ${ALIST_URL:http://127.0.0.1:5244}
+    - name: xy
+      url: ${ALIST_URL:http://192.168.2.101:5678}
+#      indexFile: https://hhzhome.accesscam.org:32443/files/index.txt
+      indexFile: http://192.168.2.101:9092/files/index.txt
       searchable: true
+      version: 3
+    - name: me
+      url: ${ALIST_URL:http://192.168.2.101:5244}
+      searchable: true
+      version: 3
+

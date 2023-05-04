@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -27,7 +28,8 @@ public class PlayController {
     public void play(Integer site, String path, HttpServletRequest request, HttpServletResponse response) throws IOException {
         log.debug("{} {} {}", request.getMethod(), request.getRequestURI(), request.getQueryString());
         log.debug("get play url - site: {}  path: {}", site, path);
-        String url = tvBoxService.getPlayUrl(site, path);
-        response.sendRedirect(parseService.parse(url));
+        ServletUriComponentsBuilder builder = ServletUriComponentsBuilder.fromCurrentRequestUri();
+        String url = tvBoxService.getPlayUrl(site, path,builder);
+        response.sendRedirect(parseService.parse(url,builder));
     }
 }

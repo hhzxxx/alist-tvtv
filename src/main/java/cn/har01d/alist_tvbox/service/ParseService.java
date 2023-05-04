@@ -8,8 +8,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.HttpURLConnection;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -28,7 +30,7 @@ public class ParseService {
                 }).build();
     }
 
-    public String parse(String url) {
+    public String parse(String url, ServletUriComponentsBuilder builder) {
         log.info("parse url: {}", url);
         String result = url;
 
@@ -38,6 +40,9 @@ public class ParseService {
             if (location != null) {
                 result = location;
             }
+        }
+        if(url.contains("192.168.2.101") && Objects.equals(builder.build().getHost(), "hhzhome.accesscam.org")){
+            result = result.replace("192.168.2.101:5244","hhzhome.accesscam.org:35244");
         }
 
         log.info("result: {}", result);

@@ -6,6 +6,7 @@ import cn.har01d.alist_tvbox.model.*;
 import cn.har01d.alist_tvbox.util.Constants;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -24,6 +26,10 @@ public class AListService {
     private final RestTemplate restTemplate;
     private final SiteService siteService;
 
+    @Autowired
+    private IRedisService redisService;
+
+
     public AListService(RestTemplateBuilder builder, SiteService siteService) {
         this.restTemplate = builder
                 .defaultHeader(HttpHeaders.ACCEPT, Constants.ACCEPT)
@@ -32,15 +38,35 @@ public class AListService {
         this.siteService = siteService;
     }
 
-    public List<SearchResult> search(Site site, String keyword) {
-        String url = site.getUrl() + "/api/fs/search?keyword=" + keyword;
+    public List<SearchResult> search(Site site, String keyword,int count) {
+        if(count > 2){
+            return new ArrayList<>();
+        }
+        String searchWord = keyword;
+        if(count > 1){
+            searchWord = searchWord.substring(0,Math.max((keyword.length())/count,1));
+        }
+        String url = site.getUrl() + "/api/fs/search?keyword=" + searchWord;
         SearchRequest request = new SearchRequest();
         request.setPassword(site.getPassword());
-        request.setKeywords(keyword);
+        request.setKeywords(searchWord);
         SearchListResponse response = restTemplate.postForObject(url, request, SearchListResponse.class);
         logError(response);
-        log.debug("search \"{}\" from site {}:{} result: {}", keyword, site.getId(), site.getName(), response.getData().getContent().size());
-        return response.getData().getContent();
+        log.debug("search \"{}\" from site {}:{} result: {}", searchWord, site.getId(), site.getName(), response.getData().getContent().size());
+        List<SearchResult> list = response.getData().getContent().stream().filter(a -> a.getType() != 5).collect(Collectors.toList());
+        List<String> hides = new ArrayList<>();
+        list.forEach(r -> {
+            if(r.getType() == 1 && (r.getParent().contains("电视剧") || r.getParent().contains("动漫"))){
+                hides.add(r.getParent()+"/"+r.getName());
+            }
+        });
+        if(list.isEmpty()){
+            return search(site,keyword,count + 1);
+        }else {
+            list = list.stream().filter(a -> !hides.contains(a.getParent()) || a.getType() == 1)
+                    .filter(a -> a.getType()!=4).collect(Collectors.toList());
+            return list;
+        }
     }
 
     public List<FileItem> browse(int id, String path) {
@@ -68,7 +94,8 @@ public class AListService {
         String url = site.getUrl() + (version == 2 ? "/api/public/path" : "/api/fs/list");
         FsRequest request = new FsRequest();
         request.setPassword(site.getPassword());
-        request.setPath(path);
+        request.setPath(path.replace("/mv","").replace("/xioya","")
+                .replace("/.",""));
         request.setPage(page);
         request.setSize(size);
         log.debug("call api: {}", url);
@@ -108,12 +135,20 @@ public class AListService {
         String url = site.getUrl() + "/api/fs/get";
         FsRequest request = new FsRequest();
         request.setPassword(site.getPassword());
-        request.setPath(path);
+        request.setPath(path.replace("/mv","").replace("/xioya","")
+                .replace("/.",""));
         log.debug("call api: {}", url);
-        FsDetailResponse response = restTemplate.postForObject(url, request, FsDetailResponse.class);
-        logError(response);
-        log.debug("get file: {} {}", path, response.getData());
-        return response.getData();
+        try {
+            FsDetailResponse response = restTemplate.postForObject(url, request, FsDetailResponse.class);
+            logError(response);
+            log.debug("get file: {} {}", path, response.getData());
+            return response.getData();
+        }catch (Exception e){
+            if(path.contains("/./") && !redisService.ignores.contains(path.replace("/.",""))){
+                redisService.ignores.add(path.replace("/.",""));
+            }
+            return null;
+        }
     }
 
     private FsDetail getFileV2(Site site, String path) {

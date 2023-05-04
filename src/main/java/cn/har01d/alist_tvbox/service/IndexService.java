@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.DateFormatUtils;
+import org.apache.commons.lang3.time.DateUtils;
 import org.apache.commons.text.similarity.CosineSimilarity;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -71,8 +73,15 @@ public class IndexService {
         downloadIndexFile(site, true);
     }
 
+    Date lastUpTime = null;
+
     public String downloadIndexFile(Site site) throws IOException {
-        return downloadIndexFile(site, false);
+        if(lastUpTime == null || DateUtils.addHours(lastUpTime,10).before(new Date())){
+            lastUpTime = new Date();
+            return downloadIndexFile(site, true);
+        }else {
+            return downloadIndexFile(site, false);
+        }
     }
 
     public String downloadIndexFile(Site site, boolean update) throws IOException {
@@ -91,18 +100,22 @@ public class IndexService {
         if (!update && file.exists()) {
             return file.getAbsolutePath();
         }
-
-        if (name.endsWith(".zip")) {
-            if (unchanged(site, url, name)) {
-                return file.getAbsolutePath();
+        try {
+            if (name.endsWith(".zip")) {
+                if (unchanged(site, url, name)) {
+                    return file.getAbsolutePath();
+                }
+                log.info("download index file from {}", url);
+                downloadZipFile(site, url, name);
+            } else {
+                log.info("download index file from {}", url);
+                FileUtils.copyURLToFile(new URL(url), file);
             }
-
-            log.info("download index file from {}", url);
-            downloadZipFile(site, url, name);
-        } else {
-            log.info("download index file from {}", url);
-            FileUtils.copyURLToFile(new URL(url), file);
+            TvBoxService.readAllLines = new ArrayList<>();
+        }catch (Exception e){
+            log.error("在线获取index文件失败：{}", url);
         }
+
 
         return file.getAbsolutePath();
     }

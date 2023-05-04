@@ -1,5 +1,6 @@
 package cn.har01d.alist_tvbox.service;
 
+import cn.har01d.alist_tvbox.annotation.CacheCheck;
 import cn.har01d.alist_tvbox.config.AppProperties;
 import cn.har01d.alist_tvbox.entity.Site;
 import cn.har01d.alist_tvbox.model.*;
@@ -8,6 +9,7 @@ import cn.har01d.alist_tvbox.tvbox.CategoryList;
 import cn.har01d.alist_tvbox.tvbox.MovieDetail;
 import cn.har01d.alist_tvbox.tvbox.MovieList;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -30,6 +32,9 @@ import static cn.har01d.alist_tvbox.util.Constants.*;
 @Service
 public class TvBoxService {
 
+    @Autowired
+    private IRedisService redisService;
+
     private final AListService aListService;
     private final IndexService indexService;
     private final MovieService movieService;
@@ -45,6 +50,7 @@ public class TvBoxService {
             new FilterValue("大小⬆️", "size,asc"),
             new FilterValue("大小⬇️", "size,desc")
     );
+
 
     public TvBoxService(AListService aListService, IndexService indexService, MovieService movieService, SiteService siteService, AppProperties appProperties) {
         this.aListService = aListService;
@@ -101,6 +107,8 @@ public class TvBoxService {
         return result;
     }
 
+    public static List<String> readAllLines = new ArrayList<>();
+
     private List<MovieDetail> searchByFile(Site site, String keyword) throws IOException {
         String indexFile = site.getIndexFile();
         if (indexFile.startsWith("http://") || indexFile.startsWith("https://")) {
@@ -109,10 +117,24 @@ public class TvBoxService {
 
         log.info("search \"{}\" from site {}:{}, index file: {}", keyword, site.getId(), site.getName(), indexFile);
         Set<String> keywords = Arrays.stream(keyword.split("\\s+")).collect(Collectors.toSet());
-        Set<String> lines = Files.readAllLines(Paths.get(indexFile))
+        if(readAllLines.isEmpty()){
+            readAllLines = Files.readAllLines(Paths.get(indexFile))
+                    .stream()
+                    .filter(path -> !path.contains("./电子书/"))
+                    .filter(path -> !path.contains("./资料/"))
+                    .collect(Collectors.toList());
+        }
+        Set<String> lines = readAllLines
                 .stream()
                 .filter(path -> keywords.stream().allMatch(path::contains))
-                .collect(Collectors.toSet());
+                .sorted((o1, o2) -> {
+                    if(keywords.stream().anyMatch(o1::equals)){
+                        return 1;
+                    }else {
+                        return -1;
+                    }
+                })
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
         List<MovieDetail> list = new ArrayList<>();
         for (String line : lines) {
@@ -120,10 +142,21 @@ public class TvBoxService {
             if (isMediaFile && lines.contains(getParent(line))) {
                 continue;
             }
+
+            if(redisService.ignores.stream().anyMatch(line::contains)){
+                continue;
+            }
             String path = fixPath("/" + line + (isMediaFile ? "" : PLAYLIST));
             MovieDetail movieDetail = new MovieDetail();
             movieDetail.setVod_id(site.getId() + "$" + path);
             movieDetail.setVod_name(site.getName() + ":" + line);
+            String[] names = line.split("/");
+            try {
+                if(!names[names.length-1].contains(keyword)){
+                    continue;
+                }
+                movieDetail.setVod_name("ya_"+names[names.length-1]);
+            }catch (Exception ignore){}
             movieDetail.setVod_tag(isMediaFile ? FILE : FOLDER);
             list.add(movieDetail);
         }
@@ -135,7 +168,8 @@ public class TvBoxService {
 
     private List<MovieDetail> searchByApi(Site site, String keyword) {
         log.info("search \"{}\" from site {}:{}", keyword, site.getId(), site.getName());
-        return aListService.search(site, keyword)
+        List<SearchResult> res = aListService.search(site, keyword,1);
+        return  res
                 .stream()
                 .map(e -> {
                     boolean isMediaFile = isMediaFile(e.getName());
@@ -324,19 +358,41 @@ public class TvBoxService {
         return list;
     }
 
-    public String getPlayUrl(Integer siteId, String path) {
+    public String getPlayUrl(Integer siteId, String path,ServletUriComponentsBuilder builder) {
         Site site = siteService.getById(siteId);
+        if(path.contains("/有声书/有声小说") && builder.build().getHost().contains("hhzhome")){
+            site = siteService.getById(2);
+        }
         log.info("get play url - site {}:{}  path: {}", site.getId(), site.getName(), path);
         FsDetail fsDetail = aListService.getFile(site, path);
         return fixHttp(fsDetail.getRaw_url());
     }
 
-    public MovieList getDetail(String tid) {
+    @CacheCheck(exTime = 60*60*2)
+    public MovieList getDetail(@CacheCheck String tid,@CacheCheck ServletUriComponentsBuilder builder) {
         int index = tid.indexOf('$');
         Site site = getSite(tid);
         String path = tid.substring(index + 1);
         if (path.contains(PLAYLIST) || path.contains(PLAYLIST_TXT)) {
-            return getPlaylist(site, path);
+            MovieList movieList = getPlaylist(site, path,builder);
+            List<MovieDetail> list = movieList.getList();
+            MovieDetail movieDetail = list.get(0);
+            for (int i = 1; i < list.size(); i++) {
+                MovieDetail d = list.get(i);
+                if(!org.apache.commons.lang3.StringUtils.isBlank(d.getVod_play_url())){
+                    if(org.apache.commons.lang3.StringUtils.isBlank(movieDetail.getVod_play_url())){
+                        movieDetail.setVod_play_from(d.getVod_play_from());
+                        movieDetail.setVod_play_url(d.getVod_play_url());
+                    }else {
+                        movieDetail.setVod_play_from(movieDetail.getVod_play_from()+"$$$"+d.getVod_play_from());
+                        movieDetail.setVod_play_url(movieDetail.getVod_play_url()+"$$$"+d.getVod_play_url());
+                    }
+                }
+            }
+            list = new ArrayList<>();
+            list.add(movieDetail);
+            movieList.setList(list);
+            return movieList;
         }
 
         FsDetail fsDetail = aListService.getFile(site, path);
@@ -358,18 +414,23 @@ public class TvBoxService {
         return result;
     }
 
-    private String buildPlayUrl(Site site, String path) {
-        ServletUriComponentsBuilder builder = ServletUriComponentsBuilder.fromCurrentRequestUri();
-        builder.replacePath("/play");
-        builder.queryParam("site", String.valueOf(site.getId()));
-        builder.queryParam("path", encodeUrl(path));
-        return builder.build().toUriString();
+    private String buildPlayUrl(Site site, String path,ServletUriComponentsBuilder builder) {
+        ServletUriComponentsBuilder builder1 = builder.cloneBuilder();
+        if(builder1.build().getPort() == 9443 || builder1.build().getPort() == 443
+          || builder1.build().getPort() == 32443){
+            builder1.scheme("https");
+        }
+        builder1.replacePath("/alist/play");
+        builder1.queryParam("site", String.valueOf(site.getId()));
+        builder1.queryParam("path", encodeUrl(path));
+        return builder1.build().toUriString();
     }
 
-    public MovieList getPlaylist(Site site, String path) {
+
+    public MovieList getPlaylist(Site site, String path,ServletUriComponentsBuilder builder) {
         log.info("load playlist {}:{} {}", site.getId(), site.getName(), path);
         if (!path.contains(PLAYLIST)) {
-            return readPlaylistFromFile(site, path);
+            return readPlaylistFromFile(site, path,builder);
         }
         String newPath = getParent(path);
         FsDetail fsDetail = aListService.getFile(site, newPath);
@@ -378,7 +439,7 @@ public class TvBoxService {
         movieDetail.setVod_id(site.getId() + "$" + path);
         movieDetail.setVod_name(fsDetail.getName());
         movieDetail.setVod_time(fsDetail.getModified());
-        movieDetail.setVod_play_from(fsDetail.getProvider());
+        movieDetail.setVod_play_from(fsDetail.getName());
         movieDetail.setVod_content(site.getName() + ":" + newPath);
         movieDetail.setVod_tag(FILE);
         movieDetail.setVod_pic(LIST_PIC);
@@ -387,6 +448,9 @@ public class TvBoxService {
         List<FsInfo> files = fsResponse.getFiles().stream()
                 .filter(e -> isMediaFormat(e.getName()))
                 .collect(Collectors.toList());
+        List<FsInfo> dirs = fsResponse.getFiles().stream()
+                .filter(e -> e.getType() == 1)
+                .collect(Collectors.toList());
 
         if (appProperties.isSort()) {
             files.sort(Comparator.comparing(e -> new FileNameInfo(e.getName())));
@@ -394,7 +458,7 @@ public class TvBoxService {
 
         List<String> list = new ArrayList<>();
         for (FsInfo fsInfo : files) {
-            list.add(getName(fsInfo.getName()) + "$" + buildPlayUrl(site, newPath + "/" + fsInfo.getName()));
+            list.add(getName(fsInfo.getName()) + "$" + buildPlayUrl(site, newPath + "/" + fsInfo.getName(),builder));
         }
 
         movieDetail.setVod_play_url(String.join("#", list));
@@ -402,13 +466,18 @@ public class TvBoxService {
 
         MovieList result = new MovieList();
         result.getList().add(movieDetail);
+        dirs.forEach(d -> {
+            MovieList list1 = getPlaylist(site,path.replace("/~playlist","")+"/"+d.getName()+"/~playlist",builder);
+            result.getList().addAll(list1.getList());
+        });
+
         result.setLimit(result.getList().size());
         result.setTotal(result.getList().size());
         log.debug("playlist: {}", result);
         return result;
     }
 
-    private MovieList readPlaylistFromFile(Site site, String path) {
+    private MovieList readPlaylistFromFile(Site site, String path,ServletUriComponentsBuilder builder) {
         List<String> files = new ArrayList<>();
         int id = getPlaylistId(path);
 
@@ -455,7 +524,7 @@ public class TvBoxService {
             try {
                 String name = line.split(",")[0];
                 String file = line.split(",")[1];
-                list.add(name + "$" + buildPlayUrl(site, newPath + "/" + file));
+                list.add(name + "$" + buildPlayUrl(site, newPath + "/" + file,builder));
             } catch (Exception e) {
                 log.warn("", e);
             }

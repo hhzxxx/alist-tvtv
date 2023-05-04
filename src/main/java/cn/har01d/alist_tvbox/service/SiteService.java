@@ -43,6 +43,7 @@ public class SiteService {
             site.setSearchable(s.isSearchable());
             site.setIndexFile(s.getIndexFile());
             site.setOrder(order++);
+            site.setVersion(3);
             siteRepository.save(site);
             log.info("save site to database: {}", site);
         }
