@@ -10,13 +10,10 @@ import cn.har01d.alist_tvbox.entity.Task;
 import cn.har01d.alist_tvbox.model.FsInfo;
 import cn.har01d.alist_tvbox.model.FsResponse;
 import cn.har01d.alist_tvbox.tvbox.IndexContext;
-import com.hankcs.hanlp.HanLP;
-import com.hankcs.hanlp.seg.common.Term;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.apache.commons.text.similarity.CosineSimilarity;
 import org.springframework.scheduling.annotation.Async;
@@ -44,14 +41,14 @@ import java.util.zip.ZipOutputStream;
 public class IndexService {
     private final AListService aListService;
     private final SiteService siteService;
-    private final TaskService taskService;
+    //private final TaskService taskService;
     private final AppProperties appProperties;
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
-    public IndexService(AListService aListService, SiteService siteService, TaskService taskService, AppProperties appProperties) {
+    public IndexService(AListService aListService, SiteService siteService, AppProperties appProperties) {
         this.aListService = aListService;
         this.siteService = siteService;
-        this.taskService = taskService;
+        //this.taskService = taskService;
         this.appProperties = appProperties;
         updateIndexFile();
     }
@@ -192,71 +189,71 @@ public class IndexService {
         return name;
     }
 
-    public IndexResponse index(IndexRequest indexRequest) throws IOException {
-        cn.har01d.alist_tvbox.entity.Site site = siteService.getById(indexRequest.getSiteId());
-        Task task = taskService.addIndexTask(site);
+    //public IndexResponse index(IndexRequest indexRequest) throws IOException {
+    //    cn.har01d.alist_tvbox.entity.Site site = siteService.getById(indexRequest.getSiteId());
+    //    Task task = taskService.addIndexTask(site);
+    //
+    //    executorService.submit(() -> {
+    //        try {
+    //            index(indexRequest, site, task);
+    //        } catch (Exception e) {
+    //            taskService.failTask(task.getId(), e.getMessage());
+    //        }
+    //    });
+    //
+    //    return new IndexResponse(task.getId());
+    //}
 
-        executorService.submit(() -> {
-            try {
-                index(indexRequest, site, task);
-            } catch (Exception e) {
-                taskService.failTask(task.getId(), e.getMessage());
-            }
-        });
+    //@Async
+    //public void index(IndexRequest indexRequest, cn.har01d.alist_tvbox.entity.Site site, Task task) throws IOException {
+    //    StopWatch stopWatch = new StopWatch("index");
+    //    File dir = new File("data/index/" + indexRequest.getSiteId());
+    //    Files.createDirectories(dir.toPath());
+    //    File file = new File(dir, indexRequest.getIndexName() + ".txt");
+    //    File info = new File(dir, indexRequest.getIndexName() + ".info");
+    //
+    //    if (indexRequest.isIncremental()) {
+    //        removeLines(file, indexRequest.getPaths());
+    //    }
+    //
+    //    String summary;
+    //    try (FileWriter writer = new FileWriter(file, indexRequest.isIncremental());
+    //         FileWriter writer2 = new FileWriter(info)) {
+    //        Instant time = Instant.now();
+    //        taskService.startTask(task.getId());
+    //        taskService.updateTaskData(task.getId(), file.getAbsolutePath());
+    //        IndexContext context = new IndexContext(indexRequest, site, writer, task.getId());
+    //        for (String path : indexRequest.getPaths()) {
+    //            if (isCancelled(context)) {
+    //                break;
+    //            }
+    //            if (StringUtils.isBlank(path)) {
+    //                continue;
+    //            }
+    //            stopWatch.start("index " + path);
+    //            index(context, path, 0);
+    //            stopWatch.stop();
+    //        }
+    //        writer2.write(time.toString());
+    //        log.info("index stats: {}", context.stats);
+    //        summary = context.stats.toString();
+    //    }
+    //
+    //    if (indexRequest.isCompress()) {
+    //        File zipFIle = new File(dir, indexRequest.getIndexName() + ".zip");
+    //        zipFile(file, info, zipFIle);
+    //    }
+    //    taskService.completeTask(task.getId());
+    //    taskService.updateTaskSummary(task.getId(), summary);
+    //
+    //    log.info("index done, total time : {} {}", Duration.ofNanos(stopWatch.getTotalTimeNanos()), stopWatch.prettyPrint());
+    //    log.info("index file: {}", file.getAbsolutePath());
+    //}
 
-        return new IndexResponse(task.getId());
-    }
-
-    @Async
-    public void index(IndexRequest indexRequest, cn.har01d.alist_tvbox.entity.Site site, Task task) throws IOException {
-        StopWatch stopWatch = new StopWatch("index");
-        File dir = new File("data/index/" + indexRequest.getSiteId());
-        Files.createDirectories(dir.toPath());
-        File file = new File(dir, indexRequest.getIndexName() + ".txt");
-        File info = new File(dir, indexRequest.getIndexName() + ".info");
-
-        if (indexRequest.isIncremental()) {
-            removeLines(file, indexRequest.getPaths());
-        }
-
-        String summary;
-        try (FileWriter writer = new FileWriter(file, indexRequest.isIncremental());
-             FileWriter writer2 = new FileWriter(info)) {
-            Instant time = Instant.now();
-            taskService.startTask(task.getId());
-            taskService.updateTaskData(task.getId(), file.getAbsolutePath());
-            IndexContext context = new IndexContext(indexRequest, site, writer, task.getId());
-            for (String path : indexRequest.getPaths()) {
-                if (isCancelled(context)) {
-                    break;
-                }
-                if (StringUtils.isBlank(path)) {
-                    continue;
-                }
-                stopWatch.start("index " + path);
-                index(context, path, 0);
-                stopWatch.stop();
-            }
-            writer2.write(time.toString());
-            log.info("index stats: {}", context.stats);
-            summary = context.stats.toString();
-        }
-
-        if (indexRequest.isCompress()) {
-            File zipFIle = new File(dir, indexRequest.getIndexName() + ".zip");
-            zipFile(file, info, zipFIle);
-        }
-        taskService.completeTask(task.getId());
-        taskService.updateTaskSummary(task.getId(), summary);
-
-        log.info("index done, total time : {} {}", Duration.ofNanos(stopWatch.getTotalTimeNanos()), stopWatch.prettyPrint());
-        log.info("index file: {}", file.getAbsolutePath());
-    }
-
-    private boolean isCancelled(IndexContext context) {
-        Task task = taskService.getById(context.getTaskId());
-        return task.getStatus() == TaskStatus.COMPLETED && task.getResult() == TaskResult.CANCELLED;
-    }
+    //private boolean isCancelled(IndexContext context) {
+    //    Task task = taskService.getById(context.getTaskId());
+    //    return task.getStatus() == TaskStatus.COMPLETED && task.getResult() == TaskResult.CANCELLED;
+    //}
 
     private void removeLines(File file, Set<String> prefix) {
         try {
@@ -293,71 +290,71 @@ public class IndexService {
         }
     }
 
-    private void index(IndexContext context, String path, int depth) throws IOException {
-        if ((context.getMaxDepth() > 0 && depth == context.getMaxDepth()) || isCancelled(context)) {
-            return;
-        }
-
-        if (!log.isDebugEnabled()) {
-            log.info("index {} : {}", context.getSiteName(), path);
-        }
-
-        FsResponse fsResponse = aListService.listFiles(context.getSite(), path, 1, 0);
-        if (fsResponse == null) {
-            context.stats.errors++;
-            return;
-        }
-        if (context.isExcludeExternal() && fsResponse.getProvider().contains("AList")) {
-            log.warn("exclude external {}", path);
-            return;
-        }
-
-        List<String> files = new ArrayList<>();
-        for (FsInfo fsInfo : fsResponse.getFiles()) {
-            try {
-                if (fsInfo.getType() == 1) { // folder
-                    String newPath = fixPath(path + "/" + fsInfo.getName());
-                    if (exclude(context.getExcludes(), newPath)) {
-                        log.warn("exclude folder {}", newPath);
-                        context.stats.excluded++;
-                        continue;
-                    }
-
-                    index(context, newPath, depth + 1);
-                } else if (isMediaFormat(fsInfo.getName())) { // file
-                    String newPath = fixPath(path + "/" + fsInfo.getName());
-                    if (exclude(context.getExcludes(), newPath)) {
-                        log.warn("exclude file {}", newPath);
-                        context.stats.excluded++;
-                        continue;
-                    }
-
-                    context.stats.files++;
-                    files.add(fsInfo.getName());
-                }
-            } catch (Exception e) {
-                log.warn("index error", e);
-            }
-        }
-
-        if (files.size() > 0 && !context.contains(path)) {
-            context.write(path);
-        }
-
-        if (isSimilar(path, files, context.getStopWords())) {
-            return;
-        }
-
-        for (String name : files) {
-            String newPath = fixPath(path + "/" + name);
-            if (context.contains(newPath)) {
-                continue;
-            }
-            context.write(newPath);
-        }
-
-        taskService.updateTaskSummary(context.getTaskId(), context.stats.toString());
-    }
+    //private void index(IndexContext context, String path, int depth) throws IOException {
+    //    if ((context.getMaxDepth() > 0 && depth == context.getMaxDepth()) || isCancelled(context)) {
+    //        return;
+    //    }
+    //
+    //    if (!log.isDebugEnabled()) {
+    //        log.info("index {} : {}", context.getSiteName(), path);
+    //    }
+    //
+    //    FsResponse fsResponse = aListService.listFiles(context.getSite(), path, 1, 0);
+    //    if (fsResponse == null) {
+    //        context.stats.errors++;
+    //        return;
+    //    }
+    //    if (context.isExcludeExternal() && fsResponse.getProvider().contains("AList")) {
+    //        log.warn("exclude external {}", path);
+    //        return;
+    //    }
+    //
+    //    List<String> files = new ArrayList<>();
+    //    for (FsInfo fsInfo : fsResponse.getFiles()) {
+    //        try {
+    //            if (fsInfo.getType() == 1) { // folder
+    //                String newPath = fixPath(path + "/" + fsInfo.getName());
+    //                if (exclude(context.getExcludes(), newPath)) {
+    //                    log.warn("exclude folder {}", newPath);
+    //                    context.stats.excluded++;
+    //                    continue;
+    //                }
+    //
+    //                index(context, newPath, depth + 1);
+    //            } else if (isMediaFormat(fsInfo.getName())) { // file
+    //                String newPath = fixPath(path + "/" + fsInfo.getName());
+    //                if (exclude(context.getExcludes(), newPath)) {
+    //                    log.warn("exclude file {}", newPath);
+    //                    context.stats.excluded++;
+    //                    continue;
+    //                }
+    //
+    //                context.stats.files++;
+    //                files.add(fsInfo.getName());
+    //            }
+    //        } catch (Exception e) {
+    //            log.warn("index error", e);
+    //        }
+    //    }
+    //
+    //    if (files.size() > 0 && !context.contains(path)) {
+    //        context.write(path);
+    //    }
+    //
+    //    if (isSimilar(path, files, context.getStopWords())) {
+    //        return;
+    //    }
+    //
+    //    for (String name : files) {
+    //        String newPath = fixPath(path + "/" + name);
+    //        if (context.contains(newPath)) {
+    //            continue;
+    //        }
+    //        context.write(newPath);
+    //    }
+    //
+    //    taskService.updateTaskSummary(context.getTaskId(), context.stats.toString());
+    //}
 
     private boolean exclude(Set<String> rules, String path) {
         for (String rule : rules) {
@@ -414,36 +411,36 @@ public class IndexService {
 
         double sum = 0.0;
         CosineSimilarity cosineSimilarity = new CosineSimilarity();
-        Map<CharSequence, Integer> leftVector = getVector(stopWords, sentences.get(0));
-        for (int i = 1; i < sentences.size(); ++i) {
-            Map<CharSequence, Integer> rightVector = getVector(stopWords, sentences.get(i));
-            sum += cosineSimilarity.cosineSimilarity(leftVector, rightVector);
-            leftVector = rightVector;
-        }
+        //Map<CharSequence, Integer> leftVector = getVector(stopWords, sentences.get(0));
+        //for (int i = 1; i < sentences.size(); ++i) {
+        //    Map<CharSequence, Integer> rightVector = getVector(stopWords, sentences.get(i));
+        //    sum += cosineSimilarity.cosineSimilarity(leftVector, rightVector);
+        //    leftVector = rightVector;
+        //}
         double result = sum / (sentences.size() - 1);
 
         log.debug("cosineSimilarity {} : {}", path, result);
         return result > 0.9;
     }
 
-    private Map<CharSequence, Integer> getVector(Set<String> stopWords, String text) {
-        Map<CharSequence, Integer> result = new HashMap<>();
-        for (String stopWord : stopWords) {
-            text = text.replaceAll(stopWord, "");
-        }
-        text = text.replaceAll("\\d+", " ").replaceAll("\\s+", " ");
-        List<Term> termList = HanLP.segment(text);
-        for (Term term : termList) {
-            int frequency = term.getFrequency();
-            if (frequency == 0) {
-                frequency = 1;
-            }
-            if (result.containsKey(term.word)) {
-                result.put(term.word, result.get(term.word) + frequency);
-            } else {
-                result.put(term.word, frequency);
-            }
-        }
-        return result;
-    }
+    //private Map<CharSequence, Integer> getVector(Set<String> stopWords, String text) {
+    //    Map<CharSequence, Integer> result = new HashMap<>();
+    //    for (String stopWord : stopWords) {
+    //        text = text.replaceAll(stopWord, "");
+    //    }
+    //    text = text.replaceAll("\\d+", " ").replaceAll("\\s+", " ");
+    //    List<Term> termList = HanLP.segment(text);
+    //    for (Term term : termList) {
+    //        int frequency = term.getFrequency();
+    //        if (frequency == 0) {
+    //            frequency = 1;
+    //        }
+    //        if (result.containsKey(term.word)) {
+    //            result.put(term.word, result.get(term.word) + frequency);
+    //        } else {
+    //            result.put(term.word, frequency);
+    //        }
+    //    }
+    //    return result;
+    //}
 }

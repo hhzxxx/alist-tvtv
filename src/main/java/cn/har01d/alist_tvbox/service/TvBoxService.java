@@ -171,6 +171,12 @@ public class TvBoxService {
         List<SearchResult> res = aListService.search(site, keyword,1);
         return  res
                 .stream()
+                .filter(a -> {
+                    if(a.getParent().contains("book")){
+                        return a.getType() == 1 && !isMediaFile(a.getName());
+                    }
+                    return true;
+                })
                 .map(e -> {
                     boolean isMediaFile = isMediaFile(e.getName());
                     String path = fixPath(e.getParent() + "/" + e.getName() + (isMediaFile ? "" : PLAYLIST));
@@ -392,6 +398,9 @@ public class TvBoxService {
             list = new ArrayList<>();
             list.add(movieDetail);
             movieList.setList(list);
+            if(org.apache.commons.lang3.StringUtils.isBlank(movieDetail.getVod_play_url())){
+                return null;
+            }
             return movieList;
         }
 

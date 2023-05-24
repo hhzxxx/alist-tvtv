@@ -2,6 +2,7 @@ package cn.har01d.alist_tvbox.aop;
 
 import cn.har01d.alist_tvbox.annotation.CacheCheck;
 import cn.har01d.alist_tvbox.service.IRedisService;
+import cn.har01d.alist_tvbox.tvbox.MovieList;
 import cn.har01d.alist_tvbox.util.MD5Utils;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
@@ -75,13 +76,15 @@ public class CacheAspect {
             }
             if(cache == null){
                 Object result = joinPoint.proceed();
-                try {
-                    redisService.set(key.toString(),result,60*60*24*3);
-                    if( exTime > 0){
-                        redisService.set(key.toString().replace("cache","extime"),exTime,exTime);
+                if(result != null){
+                    try {
+                        redisService.set(key.toString(),result,60*60*24*3);
+                        if( exTime > 0){
+                            redisService.set(key.toString().replace("cache","extime"),exTime,exTime);
+                        }
+                    }catch (Exception ignore){
+                        return result;
                     }
-                }catch (Exception ignore){
-                    return result;
                 }
                 return result;
             }else {

@@ -80,8 +80,8 @@ app:
   sites:
     - name: xy
       url: ${ALIST_URL:http://192.168.2.101:5678}
-#      indexFile: https://hhzhome.accesscam.org:32443/files/index.txt
-      indexFile: http://192.168.2.101:9092/files/index.txt
+      indexFile: /app/webdav/files/index.video.txt
+#      indexFile: http://192.168.2.101:9092/files/index.txt
       searchable: true
       version: 3
     - name: me
